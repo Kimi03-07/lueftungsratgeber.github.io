@@ -1,0 +1,112 @@
+
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lüftungs‑ & Taupunkt‑Rechner (Innen/außen)</title>
+  <meta name="theme-color" content="#0a7d7d" />
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Garage‑Assistent: Absolute Feuchte & Taupunkt</h1>
+    <p>Vergleiche Innen ↔ Außen und entscheide: <strong>Lüften – ja oder nein?</strong></p>
+  </header>
+
+  <main>
+    <section class="settings card">
+      <h2>Einstellungen</h2>
+      <div class="grid-3">
+        <label>
+          <span>Höhe über Meer (m)</span>
+          <input type="number" id="altitude" value="635" step="1" />
+        </label>
+        <label>
+          <span>Luftdruck (hPa, optional)</span>
+          <input type="number" id="pressure" placeholder="automatisch aus Höhe" step="0.1" />
+        </label>
+        <label>
+          <span>Vergleichsmethode</span>
+          <select id="compareMode">
+            <option value="gm3" selected>Absolute Feuchte (g/m³)</option>
+            <option value="gkg">Feuchteverhältnis (g/kg)</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">Wenn kein Luftdruck eingetragen ist, wird er aus der Höhe berechnet.</p>
+    </section>
+
+    <section class="state card">
+      <h2>Innen</h2>
+      <div class="grid-3">
+        <label>
+          <span>Temperatur innen (°C)</span>
+          <input type="number" id="ti" step="0.1" value="6.2" />
+        </label>
+        <label>
+          <span>Relative Feuchte innen (%)</span>
+          <input type="number" id="rhi" step="0.1" value="68" />
+        </label>
+        <label>
+          <span>Wand-/Oberflächentemp. (°C) <small class="muted">optional</small></span>
+          <input type="number" id="tsi" step="0.1" placeholder="z.B. IR‑Thermometer" />
+        </label>
+      </div>
+      <div class="results" id="resI"></div>
+    </section>
+
+    <section class="state card">
+      <h2>Außen</h2>
+      <div class="grid-2">
+        <label>
+          <span>Temperatur außen (°C)</span>
+          <input type="number" id="to" step="0.1" value="0" />
+        </label>
+        <label>
+          <span>Relative Feuchte außen (%)</span>
+          <input type="number" id="rho" step="0.1" value="85" />
+        </label>
+      </div>
+      <div class="results" id="resO"></div>
+    </section>
+
+    <section class="decision card">
+      <h2>Entscheidung</h2>
+      <div class="grid-2">
+        <div>
+          <h3>Lüften</h3>
+          <div id="ventFlag" class="flag">–</div>
+          <p id="ventText" class="muted"></p>
+        </div>
+        <div>
+          <h3>Schimmelrisiko (innen)</h3>
+          <div id="moldFlag" class="flag">–</div>
+          <p id="moldText" class="muted"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="notes card">
+      <details>
+        <summary>Formeln & Hinweise</summary>
+        <ul>
+          <li><strong>Sättigungsdampfdruck</strong> (Tetens/Magnus): es = 6.112 · exp((17.62·T)/(243.12+T)) [hPa]</li>
+          <li><strong>Dampfdruck</strong>: e = RH/100 · es [hPa]</li>
+          <li><strong>Absolute Feuchte</strong>: AH = 216.7 · e / (T+273.15) [g/m³]</li>
+          <li><strong>Feuchteverhältnis</strong>: w = 0.62198 · e / (P − e) [kg/kg] → ×1000 = g/kg</li>
+          <li><strong>Taupunkt</strong>: α = ln(RH/100) + (17.62·T)/(243.12+T); Td = (243.12·α)/(17.62 − α)</li>
+          <li><strong>Druck aus Höhe</strong> (barometrische Näherung): P = 1013.25 · (1 − 2.25577e−5·h)^{5.2559} [hPa]</li>
+        </ul>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <p>© 2026 • Offline‑fähiger Rechner. Zum Startbildschirm hinzufügen: über HTTPS bereitstellen (z. B. GitHub Pages) und diese Seite öffnen → „Installieren“.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
