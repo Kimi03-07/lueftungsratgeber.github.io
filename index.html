@@ -1,11 +1,11 @@
-
 <!doctype html><html lang='de'>
 <head>
   <meta charset='utf-8'/>
   <meta name='viewport' content='width=device-width, initial-scale=1'/>
-  <title>Lüftungsratgeber • PWA (Altitude Fix + SVG‑Kurve)</title>
+  <title>Lüftungsratgeber • PWA</title>
   <meta name="theme-color" content="#0a7d7d"/>
-  <link rel="manifest" href="manifest.webmanifest">
+  manifest.webmanifest
+
   <style>
     body{background:#0b1114;color:#e6f2f3;font-family:system-ui;margin:0}
     header,main{padding:12px 14px}
@@ -16,7 +16,276 @@
     .block{flex:1;min-width:260px}
     .flag{padding:6px 12px;border-radius:999px;font-weight:700;display:inline-block;min-width:60px;text-align:center}
     .flag.good{background:rgba(31,163,122,.35);color:#7fffd4}
-    .flag.bad{background:rgba(217,83,79,.35);color:#ffb3ad}
+   fill:#cfe8cf;font-size:11px}    .flag.bad{background:rgba(217,83,79,.35);color:#ffb3ad}
+    .grid{stroke:rgba(255,255,255,0.08);stroke-width:1}
+    .axis{stroke:#345;stroke-width:1}
+    .curve{fill:none;stroke:#7CFF8A;stroke-width:2}
+    .point{fill:#7CFF8A}
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>Lüftungsratgeber</h1>
+  <p id="fetchStatus" style="color:#9fd3d3"></p>
+
+  <!-- 📲 INSTALL BUTTON -->
+  <button id="installBtn"
+        style="display:none;margin-top:10px;padding:10px 16px;
+               background:#0aa9d6;color:white;border-radius:8px;
+               border:none;font-size:1rem;cursor:pointer;">
+      📲 App installieren
+  </button>
+</header>
+
+<main>
+
+<!-- GEO + ORTSUCHE -->
+<div class='row'>
+  <div class='card block'>
+    <h2>Geodaten</h2>
+    <label>Latitude: <input id='lat'></label>
+    <label>Longitude: <input id='lon'></label>
+    <label>Höhe über Meer (m): <input id='altitude' type='number'></label>
+    <p class='note'>Werte werden automatisch gespeichert</p>
+  </div>
+
+  <div class='card block'>
+    <h2>Alternative Ortssuche</h2>
+    <label>Ort/Adresse: <input id='place'></label>
+    <button id='btnSearch'>Suchen</button>
+    <p id='searchErr' style='color:#ffb3ad'></p>
+    <select id='geoHits' size='5' style='width:100%'></select>
+    <button id='useGeo'>Treffer übernehmen</button>
+    <p id='stationInfo' class='note'></p>
+  </div>
+</div>
+
+<!-- WETTER + FAVORITEN -->
+<div class='row'>
+  <div class='card block'>
+    <h2>Daten abrufen</h2>
+    <button id='btnFetch'>Wetter abrufen</button>
+  </div>
+
+  <div class='card block'>
+    <h2>Favoriten</h2>
+    <button id='saveFav'>Als Favorit speichern</button>
+    <select id='favList'></select>
+    <button id='loadFav'>Favorit laden</button>
+  </div>
+</div>
+
+<!-- AUSSEN -->
+<div class='card'>
+  <h2>Außenwerte</h2>
+  <label>Temperatur außen (°C): <input id='to' type='number' step='0.1'></label>
+  <label>Relative Feuchte außen (%): <input id='rho' type='number' step='0.1'></label>
+  <label>Luftdruck (hPa): <input id='pressure' type='number' step='0.1'></label>
+</div>
+
+<!-- INNEN -->
+<div class='card'>
+  <h2>Innenwerte</h2>
+  <label>Temperatur innen (°C): <input id='ti' type='number' value='6.2'></label>
+  <label>Relative Feuchte innen (%): <input id='rhi' type='number' value='68'></label>
+  <label>Wand-/Oberflächentemp (°C): <input id='tsi' type='number'></label>
+</div>
+
+<!-- ERGEBNISSE -->
+<div class='card'>
+  <h2>Ergebnisse</h2>
+  <div id='resI'></div>
+  <div id='resO'></div>
+
+  <div class='oneLine'><div class='label'>Differenz absolute Feuchte (innen vs außen):</div><div id='deltaAH'></div></div>
+  <div class='oneLine'><div class='label'>Differenz zwischen Temperatur und Taupunkt (innen):</div><div id='deltaTd'></div><div id='deltaInterp' style='color:#9fd3d3'></div></div>
+
+  <div class='oneLine hl hl-neutral' id='ventRow'>
+    <div class='label'>Lüften:</div>
+    <div id='ventFlag' class='flag neutral'>–</div>
+    <div id='ventText'></div>
+  </div>
+
+  <div class='oneLine hl hl-neutral' id='moldRow'>
+    <div class='label'>Schimmelrisiko:</div>
+    <div id='moldFlag' class='flag neutral'>–</div>
+    <div id='moldText'></div>
+  </div>
+</div>
+
+<!-- SVG KURVE -->
+<div class='card'>
+  <h2>Isolinie: gleiche absolute Feuchte (innen)</h2>
+  <svg id='ahSvg' viewBox='0 0 640 220' width='100%' height='220'>
+    <line x1='40' y1='10' x2='40' y2='200' class='axis'/>
+    <line x1='40' y1='200' x2='620' y2='200' class='axis'/>
+    <g id='grid'></g>
+    <polyline id='ahCurve' class='curve' points=''/>
+    <g id='ahPts'></g>
+    <text x='5' y='20'>RH %</text>
+    <text x='600' y='215'>Temperatur °C</text>
+  </svg>
+  <small id='ahMsg' class='note'></small>
+</div>
+
+<!-- TABELLE -->
+<div class='card'>
+  <h2>Tabelle: Absolute Feuchte nach Temperatur & relativer Feuchte</h2>
+  <p>Temperaturen von –20 bis +40 °C und RH 10–100 %</p>
+  <table id='ahTable'></table>
+</div>
+
+</main>
+
+<script>
+/* ---------- PWA ---------- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}
+
+/* ---------- INSTALL BUTTON ---------- */
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('installBtn').style.display = 'block';
+});
+
+document.getElementById('installBtn').addEventListener('click', async () => {
+  if (deferredPrompt){
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    document.getElementById('installBtn').style.display = 'none';
+  }
+});
+
+/* ---------- Speicher ---------- */
+function loadAuto(){['lat','lon','altitude'].forEach(id=>{let v=localStorage.getItem(id); if(v) document.getElementById(id).value=v;});}
+function saveAuto(){['lat','lon','altitude'].forEach(id=>localStorage.setItem(id,document.getElementById(id).value));}
+['lat','lon','altitude'].forEach(id=>document.getElementById(id).addEventListener('input',saveAuto));
+
+/* ---------- Geocoding ---------- */
+async function geocode(q){let r=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5&language=de&format=json`); if(!r.ok) throw new Error(r.status); return r.json();}
+btnSearch.onclick=async()=>{searchErr.textContent=''; geoHits.innerHTML=''; stationInfo.textContent=''; let q=place.value.trim(); if(!q){searchErr.textContent='Bitte eingeben';return;} try{ let d=await geocode(q); if(!d.results||!d.results.length){searchErr.textContent='Keine Treffer'; return;} window._geo=d.results; d.results.forEach((p,i)=>{ let o=document.createElement('option'); o.value=i; o.textContent=`${p.name} (${p.country_code}) lat ${p.latitude}, lon ${p.longitude}`; geoHits.appendChild(o);}); }catch(e){searchErr.textContent='Fehler:'+e}};
+useGeo.onclick=()=>{let i=geoHits.value; if(i==='') return; let p=window._geo[i]; lat.value=p.latitude; lon.value=p.longitude; stationInfo.textContent=`Verwendet: lat ${p.latitude}, lon ${p.longitude}`; saveAuto();};
+
+/* ---------- Favoriten ---------- */
+function loadFavs(){let f=JSON.parse(localStorage.getItem('favorites')||'[]'); favList.innerHTML=''; f.forEach((o,i)=>{ let opt=document.createElement('option'); opt.value=i; opt.textContent=o.name; favList.appendChild(opt);}); }
+saveFav.onclick=()=>{ let name=prompt('Name für Favorit:'); if(!name) return; let f=JSON.parse(localStorage.getItem('favorites')||'[]'); f.push({name,lat:lat.value,lon:lon.value,alt:altitude.value}); localStorage.setItem('favorites',JSON.stringify(f)); loadFavs();};
+loadFav.onclick=()=>{ let i=favList.value; let f=JSON.parse(localStorage.getItem('favorites')||'[]'); lat.value=f[i].lat; lon.value=f[i].lon; altitude.value=f[i].alt; saveAuto();};
+
+/* ---------- Wetter ---------- */
+async function fetchWeather(){
+  let lt=parseFloat(lat.value), ln=parseFloat(lon.value);
+  if(!lt||!ln){setStatus('Ungültige Koordinaten'); return;}
+  try{
+    let r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lt}&longitude=${ln}&current=temperature_2m,relative_humidity_2m,surface_pressure&timezone=auto`);
+    if(!r.ok) throw new Error(r.status);
+    let d=await r.json(); let c=d.current;
+    to.value=c.temperature_2m; rho.value=c.relative_humidity_2m; pressure.value=c.surface_pressure;
+    setStatus(formatDT(c.time)); compute();
+  }catch(e){setStatus('Fehler: '+e)}
+}
+btnFetch.onclick=fetchWeather;
+
+function setStatus(text){ fetchStatus.textContent = 'Daten abgerufen: '+text; }
+function formatDT(iso){ if(!iso) return ''; const dt=new Date(iso); const pad=n=>String(n).padStart(2,'0'); return `${pad(dt.getDate())}.${pad(dt.getMonth()+1)}.${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())} Uhr`; }
+
+/* ---------- Physik ---------- */
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+function es(T){return 6.112*Math.exp((17.62*T)/(243.12+T));}
+function dew(T,RH){let a=17.62,b=243.12;let A=Math.log(clamp(RH,0.1,100)/100)+(a*T)/(b+T); return (b*A)/(a-A);}
+function AH(T,RH){let e=(RH/100)*es(T); return 216.7*e/(T+273.15);}
+function W(T,RH,P){let e=(RH/100)*es(T); return 1000*(0.62198*e/(P-e));}
+function interpretDelta(d){ if(d>3)return 'sehr sicher'; if(d>2)return 'ok'; if(d>1)return'kritisch'; return'hohe Gefahr'; }
+function setRowClass(el,cls){ el.classList.remove('hl-good','hl-bad','hl-neutral'); el.classList.add(cls); }
+
+/* ---------- SVG KURVE ---------- */
+function drawGrid(){
+  const g=document.getElementById('grid'); if(!g) return; g.innerHTML='';
+  for(let y=0; y<=100; y+=20){
+    let yy=mapY(y); g.appendChild(line(40,yy,620,yy,'grid'));
+    g.appendChild(text(8,yy+4,y));
+  }
+  for(let T=-20; T<=30; T+=10){
+    let xx=mapX(T); g.appendChild(line(xx,10,xx,200,'grid'));
+    g.appendChild(text(xx-10,215,T));
+  }
+}
+function mapX(T){const xmin=40,xmax=620,Tmin=-20,Tmax=30;return xmin + ((T-Tmin)/(Tmax-Tmin))*(xmax-xmin);}
+function mapY(RH){const ymin=10,ymax=200;return ymax - (RH/100)*(ymax-ymin);}
+function line(x1,y1,x2,y2,cls){let l=document.createElementNS('http://www.w3.org/2000/svg','line');l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);l.setAttribute('class',cls);return l;}
+function text(x,y,txt){let t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('x',x);t.setAttribute('y',y);t.textContent=txt;return t;}
+function circle(cx,cy){let c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r','2');c.setAttribute('class','point');return c;}
+
+function updateAhCurve(AHin){
+  const poly=ahCurve, pts=ahPts, msg=ahMsg; pts.innerHTML='';
+  let points=[];
+  for(let T=-20;T<=30;T+=5){
+    let RH=(AHin*(T+273.15))/(216.7*es(T))*100;
+    RH=clamp(RH,0,100);
+    let px=mapX(T), py=mapY(RH);
+    points.push([px,py]);
+    pts.appendChild(circle(px,py));
+  }
+  poly.setAttribute('points',points.map(p=>p[0]+','+p[1]).join(' '));
+  msg.textContent=`AH innen = ${AHin.toFixed(2)} g/m³  |  erforderliche RH für –20…+30 °C`;
+}
+
+/* ---------- Berechnung ---------- */
+function compute(){
+  let Ti=parseFloat(ti.value), RHi=parseFloat(rhi.value), To=parseFloat(to.value),
+      RHo=parseFloat(rho.value), P=parseFloat(pressure.value), Tsi=parseFloat(tsi.value);
+
+  if([Ti,RHi,To,RHo,P].some(v=>isNaN(v))) return;
+
+  let AHi=AH(Ti,RHi), AHo=AH(To,RHo);
+  let Tdi=dew(Ti,RHi), Tdo=dew(To,RHo);
+
+  resI.innerHTML=`Innen: AH ${AHi.toFixed(2)} g/m³, w ${W(Ti,RHi,P).toFixed(2)} g/kg, Taupunkt ${Tdi.toFixed(2)} °C`;
+  resO.innerHTML=`Außen: AH ${AHo.toFixed(2)} g/m³, w ${W(To,RHo,P).toFixed(2)} g/kg, Taupunkt ${Tdo.toFixed(2)} °C`;
+
+  deltaAH.textContent=`Δ AH = ${ (AHi-AHo).toFixed(2) } g/m³`;
+  deltaTd.textContent=`Δ = ${(Ti-Tdi).toFixed(2)} °C`;
+  deltaInterp.textContent=interpretDelta(Ti-Tdi);
+
+  if(AHi>AHo){ ventFlag.className='flag good'; ventFlag.textContent='JA'; ventText.textContent='Außen trockener.'; setRowClass(ventRow,'hl-good');}
+  else if(AHi<AHo){ ventFlag.className='flag bad'; ventFlag.textContent='NEIN'; ventText.textContent='Außen feuchter.'; setRowClass(ventRow,'hl-bad');}
+  else{ ventFlag.className='flag neutral'; ventFlag.textContent='–'; ventText.textContent='Gleich.'; setRowClass(ventRow,'hl-neutral'); }
+
+  if(!isNaN(Tsi)){
+    if(Tsi<Tdi){ moldFlag.className='flag bad'; moldFlag.textContent='RISIKO'; moldText.textContent='Taupunkttemperatur unterschritten'; setRowClass(moldRow,'hl-bad');}
+    else if(Tsi<=Tdi+1){ moldFlag.className='flag bad'; moldFlag.textContent='RISIKO'; moldText.textContent='Oberfläche nahe Taupunkt'; setRowClass(moldRow,'hl-bad');}
+    else{ moldFlag.className='flag good'; moldFlag.textContent='OK'; moldText.textContent='Keine Kondensation'; setRowClass(moldRow,'hl-good');}
+  } else {
+    moldFlag.className='flag neutral'; moldFlag.textContent='–'; moldText.textContent='Keine Oberflächentemperatur angegeben.'; setRowClass(moldRow,'hl-neutral');
+  }
+
+  updateAhCurve(AHi);
+}
+
+['ti','rhi','to','rho','pressure','tsi'].forEach(id=>document.getElementById(id).addEventListener('input',compute));
+window.addEventListener('DOMContentLoaded',()=>{ loadAuto(); loadFavs(); drawGrid(); compute(); buildTable(); });
+
+/* ---------- AH-Tabelle ---------- */
+function buildTable(){
+  let tbl=ahTable;
+  let temps=[-20,-15,-10,-5,0,5,10,15,20,25,30,35,40];
+  let rhs=[10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100];
+  let html='<tr><th>T/RH</th>'+rhs.map(r=>`<th>${r}%</th>`).join('')+'</tr>';
+  for(let T of temps){
+    html+=`<tr><th>${T}°C</th>`;
+    for(let RH of rhs){ html+=`<td>${AH(T,RH).toFixed(1)}</td>`; }
+    html+='</tr>';
+  }
+  tbl.innerHTML=html;
+}
+</script>
+
+</body>
+</html>
     .flag.neutral{background:rgba(10,125,125,.25);color:#8fe3e3}
     .hl{border-radius:10px;padding:8px 10px}
     .hl-good{background:rgba(31,163,122,.20)}
@@ -29,156 +298,3 @@
     th{background:#0c181b}
     label{display:inline-flex;align-items:center;gap:8px}
     small.note{color:#9fd3d3}
-    svg text{fill:#cfe8cf;font-size:11px}
-    .grid{stroke:rgba(255,255,255,0.08);stroke-width:1}
-    .axis{stroke:#345;stroke-width:1}
-    .curve{fill:none;stroke:#7CFF8A;stroke-width:2}
-    .point{fill:#7CFF8A}
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Lüftungsratgeber</h1>
-    <p id="fetchStatus" style="color:#9fd3d3"></p>
-  </header>
-  <main>
-    <div class='row'>
-      <div class='card block'>
-        <h2>Geodaten</h2>
-        <label>Latitude: <input id='lat'></label>
-        <label>Longitude: <input id='lon'></label>
-        <label>Höhe über Meer (m): <input id='altitude' type='number'></label>
-        <p class='note'>Werte werden automatisch gespeichert</p>
-      </div>
-      <div class='card block'>
-        <h2>Alternative Ortssuche</h2>
-        <label>Ort/Adresse: <input id='place'></label>
-        <button id='btnSearch'>Suchen</button>
-        <p id='searchErr' style='color:#ffb3ad'></p>
-        <select id='geoHits' size='5' style='width:100%'></select>
-        <button id='useGeo'>Treffer übernehmen</button>
-        <p id='stationInfo' class='note'></p>
-      </div>
-    </div>
-
-    <div class='row'>
-      <div class='card block'>
-        <h2>Daten abrufen</h2>
-        <button id='btnFetch'>Wetter abrufen</button>
-      </div>
-      <div class='card block'>
-        <h2>Favoriten</h2>
-        <button id='saveFav'>Als Favorit speichern</button>
-        <select id='favList'></select>
-        <button id='loadFav'>Favorit laden</button>
-      </div>
-    </div>
-
-    <div class='card'>
-      <h2>Außenwerte</h2>
-      <label>Temperatur außen (°C): <input id='to' type='number' step='0.1'></label>
-      <label>Relative Feuchte außen (%): <input id='rho' type='number' step='0.1'></label>
-      <label>Luftdruck (hPa): <input id='pressure' type='number' step='0.1'></label>
-    </div>
-
-    <div class='card'>
-      <h2>Innenwerte</h2>
-      <label>Temperatur innen (°C): <input id='ti' type='number' value='6.2'></label>
-      <label>Relative Feuchte innen (%): <input id='rhi' type='number' value='68'></label>
-      <label>Wand-/Oberflächentemp (°C): <input id='tsi' type='number'></label>
-    </div>
-
-    <div class='card'>
-      <h2>Ergebnisse</h2>
-      <div id='resI'></div>
-      <div id='resO'></div>
-      <div class='oneLine'><div class='label'>Differenz absolute Feuchte (innen vs außen):</div><div id='deltaAH'></div></div>
-      <div class='oneLine'><div class='label'>Differenz zwischen Temperatur und Taupunkt (innen):</div><div id='deltaTd'></div><div id='deltaInterp' style='color:#9fd3d3'></div></div>
-      <div class='oneLine hl hl-neutral' id='ventRow'>
-        <div class='label'>Lüften:</div>
-        <div id='ventFlag' class='flag neutral'>–</div>
-        <div id='ventText'></div>
-      </div>
-      <div class='oneLine hl hl-neutral' id='moldRow'>
-        <div class='label'>Schimmelrisiko:</div>
-        <div id='moldFlag' class='flag neutral'>–</div>
-        <div id='moldText'></div>
-      </div>
-    </div>
-
-    <!-- Dynamische AH‑Kurve ohne externe Bibliothek (SVG) -->
-    <div class='card'>
-      <h2>Isolinie: gleiche absolute Feuchte (innen)</h2>
-      <svg id='ahSvg' viewBox='0 0 640 220' width='100%' height='220' aria-label='AH-Isolinie'>
-        <line x1='40' y1='10' x2='40' y2='200' class='axis'/>
-        <line x1='40' y1='200' x2='620' y2='200' class='axis'/>
-        <g id='grid'></g>
-        <polyline id='ahCurve' class='curve' points=''/>
-        <g id='ahPts'></g>
-        <text x='5' y='20'>RH %</text>
-        <text x='600' y='215'>Temperatur °C</text>
-      </svg>
-      <small id='ahMsg' class='note'></small>
-    </div>
-
-    <div class='card'>
-      <h2>Tabelle: Absolute Feuchte nach Temperatur & relativer Feuchte</h2>
-      <p>Temperaturen von –20 bis +40 °C und RH 10–100 %</p>
-      <table id='ahTable'></table>
-    </div>
-  </main>
-
-<script>
-// ------- PWA register -------
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js');
-  });
-}
-
-// ------- Persistenz -------
-function loadAuto(){['lat','lon','altitude'].forEach(id=>{let v=localStorage.getItem(id); if(v) document.getElementById(id).value=v;});}
-function saveAuto(){['lat','lon','altitude'].forEach(id=>localStorage.setItem(id,document.getElementById(id).value));}
-['lat','lon','altitude'].forEach(id=>document.getElementById(id).addEventListener('input',saveAuto));
-
-// ------- Geocoding -------
-async function geocode(q){let r=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5&language=de&format=json`); if(!r.ok) throw new Error(r.status); return r.json();}
-btnSearch.onclick=async()=>{searchErr.textContent=''; geoHits.innerHTML=''; stationInfo.textContent=''; let q=place.value.trim(); if(!q){searchErr.textContent='Bitte eingeben';return;} try{ let d=await geocode(q); if(!d.results||!d.results.length){searchErr.textContent='Keine Treffer'; return;} window._geo=d.results; d.results.forEach((p,i)=>{ let o=document.createElement('option'); o.value=i; o.textContent=`${p.name} (${p.country_code}) lat ${p.latitude}, lon ${p.longitude}`; geoHits.appendChild(o);}); }catch(e){searchErr.textContent='Fehler:'+e}};
-useGeo.onclick=()=>{let i=geoHits.value; if(i==='') return; let p=window._geo[i]; lat.value=p.latitude; lon.value=p.longitude; stationInfo.textContent=`Verwendete Geodaten: lat ${p.latitude}, lon ${p.longitude}`; saveAuto();};
-
-// ------- Favoriten -------
-function loadFavs(){let f=JSON.parse(localStorage.getItem('favorites')||'[]'); favList.innerHTML=''; f.forEach((o,i)=>{ let opt=document.createElement('option'); opt.value=i; opt.textContent=o.name; favList.appendChild(opt);}); }
-saveFav.onclick=()=>{ let name=prompt('Name für Favorit:'); if(!name) return; let f=JSON.parse(localStorage.getItem('favorites')||'[]'); f.push({name,lat:lat.value,lon:lon.value,alt:altitude.value}); localStorage.setItem('favorites',JSON.stringify(f)); loadFavs();};
-loadFav.onclick=()=>{ let i=favList.value; let f=JSON.parse(localStorage.getItem('favorites')||'[]'); lat.value=f[i].lat; lon.value=f[i].lon; altitude.value=f[i].alt; saveAuto();};
-
-// ------- Wetter -------
-async function fetchWeather(){ let lt=parseFloat(lat.value), ln=parseFloat(lon.value); if(!lt||!ln){setStatus('Ungültige Koordinaten'); return;} try{ let r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lt}&longitude=${ln}&current=temperature_2m,relative_humidity_2m,surface_pressure&timezone=auto`); if(!r.ok) throw new Error(r.status); let d=await r.json(); let c=d.current; to.value=c.temperature_2m; rho.value=c.relative_humidity_2m; pressure.value=c.surface_pressure; setStatus(formatDT(c.time)); compute(); }catch(e){setStatus('Fehler: '+e)}}
-btnFetch.onclick=fetchWeather;
-function setStatus(text){ document.getElementById('fetchStatus').textContent = 'Daten abgerufen: '+text; }
-function formatDT(iso){ if(!iso) return ''; const dt=new Date(iso); const pad=n=>String(n).padStart(2,'0'); const dd=pad(dt.getDate()); const mm=pad(dt.getMonth()+1); const yyyy=dt.getFullYear(); const hh=pad(dt.getHours()); const min=pad(dt.getMinutes()); return `${dd}.${mm}.${yyyy} ${hh}:${min} Uhr`; }
-
-// ------- Physik -------
-const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
-function es(T){return 6.112*Math.exp((17.62*T)/(243.12+T));}
-function dew(T,RH){let a=17.62,b=243.12;let A=Math.log(clamp(RH,0.1,100)/100)+(a*T)/(b+T); return (b*A)/(a-A);} 
-function AH(T,RH){let e=(RH/100)*es(T); return 216.7*e/(T+273.15);} 
-function W(T,RH,P){let e=(RH/100)*es(T); return 1000*(0.62198*e/(P-e));}
-function interpretDelta(d){ if(d>3) return 'sehr sicher'; if(d>2) return 'ok'; if(d>1) return 'kritisch'; return 'hohe Gefahr'; }
-function setRowClass(el, cls){ el.classList.remove('hl-good','hl-bad','hl-neutral'); el.classList.add(cls); }
-
-// ------- SVG‑Kurve (ohne externe Bibliothek) -------
-function drawGrid(){ const g=document.getElementById('grid'); if(!g) return; g.innerHTML=''; for(let y=0; y<=100; y+=20){ let yy = mapY(y); let l=line(40,yy,620,yy,'grid'); g.appendChild(l); let t=text(8,yy+4,String(y)); g.appendChild(t); } for(let T=-20; T<=30; T+=10){ let xx = mapX(T); let l=line(xx,10,xx,200,'grid'); g.appendChild(l); let t=text(xx-10,215,String(T)); g.appendChild(t); } }
-function mapX(T){ const xmin=40, xmax=620; const Tmin=-20, Tmax=30; return xmin + ( (T-Tmin)/(Tmax-Tmin) )*(xmax-xmin); }
-function mapY(RH){ const ymin=10, ymax=200; return ymax - (RH/100)*(ymax-ymin); }
-function line(x1,y1,x2,y2,cls){ let l=document.createElementNS('http://www.w3.org/2000/svg','line'); l.setAttribute('x1',x1); l.setAttribute('y1',y1); l.setAttribute('x2',x2); l.setAttribute('y2',y2); l.setAttribute('class',cls); return l; }
-function text(x,y,txt){ let t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('x',x); t.setAttribute('y',y); t.textContent=txt; return t; }
-function circle(cx,cy){ let c=document.createElementNS('http://www.w3.org/2000/svg','circle'); c.setAttribute('cx',cx); c.setAttribute('cy',cy); c.setAttribute('r','2'); c.setAttribute('class','point'); return c; }
-function updateAhCurve(AHin){ const poly=document.getElementById('ahCurve'); const pts=document.getElementById('ahPts'); const msg=document.getElementById('ahMsg'); if(!poly||!pts||!msg) return; pts.innerHTML=''; let points=[]; for(let T=-20; T<=30; T+=5){ let RH = (AHin*(T+273.15))/(216.7*es(T))*100; RH = clamp(RH,0,100); points.push([mapX(T), mapY(RH)]); pts.appendChild(circle(points[points.length-1][0], points[points.length-1][1])); } poly.setAttribute('points', points.map(p=>p[0]+","+p[1]).join(' ')); msg.textContent = `AH innen = ${AHin.toFixed(2)} g/m³  |  Linie: erforderliche RH für T ∈ [-20…+30] °C`; }
-
-// ------- Hauptlogik -------
-function compute(){ let Ti=parseFloat(ti.value), RHi=parseFloat(rhi.value), To=parseFloat(to.value), RHo=parseFloat(rho.value), P=parseFloat(pressure.value), Tsi=parseFloat(tsi.value); if([Ti,RHi,To,RHo,P].some(v=>isNaN(v))){return;} let AHi=AH(Ti,RHi), AHo=AH(To,RHo); let Tdi=dew(Ti,RHi), Tdo=dew(To,RHo); resI.innerHTML=`Innen: AH ${AHi.toFixed(2)} g/m³, w ${W(Ti,RHi,P).toFixed(2)} g/kg, Taupunkt ${Tdi.toFixed(2)} °C`; resO.innerHTML=`Außen: AH ${AHo.toFixed(2)} g/m³, w ${W(To,RHo,P).toFixed(2)} g/kg, Taupunkt ${Tdo.toFixed(2)} °C`; let diffAH=AHi-AHo; deltaAH.textContent=`Δ AH = ${diffAH.toFixed(2)} g/m³`; let dTau=Ti-Tdi; deltaTd.textContent=`Δ = ${dTau.toFixed(2)} °C`; deltaInterp.textContent=interpretDelta(dTau); if(diffAH>0){ ventFlag.className='flag good'; ventFlag.textContent='JA'; ventText.textContent='Außen trockener.'; setRowClass(ventRow,'hl-good'); } else if(diffAH<0){ ventFlag.className='flag bad'; ventFlag.textContent='NEIN'; ventText.textContent='Außen feuchter.'; setRowClass(ventRow,'hl-bad'); } else{ ventFlag.className='flag neutral'; ventFlag.textContent='–'; ventText.textContent='Gleich.'; setRowClass(ventRow,'hl-neutral'); } if(!isNaN(Tsi)){ if(Tsi<Tdi){ moldFlag.className='flag bad'; moldFlag.textContent='RISIKO'; moldText.textContent='Taupunkttemperatur unterschritten'; setRowClass(moldRow,'hl-bad'); } else if(Tsi<=Tdi+1){ moldFlag.className='flag bad'; moldFlag.textContent='RISIKO'; moldText.textContent='Oberfläche nahe Taupunkt'; setRowClass(moldRow,'hl-bad'); } else{ moldFlag.className='flag good'; moldFlag.textContent='OK'; moldText.textContent='Keine Kondensation'; setRowClass(moldRow,'hl-good'); } } else { moldFlag.className='flag neutral'; moldFlag.textContent='–'; moldText.textContent='Keine Oberflächentemperatur angegeben.'; setRowClass(moldRow,'hl-neutral'); } try{ updateAhCurve(AHi); }catch(e){ console && console.warn && console.warn('AH SVG error', e); } }
-['ti','rhi','to','rho','pressure','tsi'].forEach(id=>document.getElementById(id).addEventListener('input',compute));
-window.addEventListener('DOMContentLoaded',()=>{ loadAuto(); loadFavs(); drawGrid(); compute(); buildTable(); });
-function buildTable(){ let tbl=document.getElementById('ahTable'); let temps=[-20,-15,-10,-5,0,5,10,15,20,25,30,35,40]; let rhs=[10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]; let html='<tr><th>T/RH</th>'+rhs.map(r=>`<th>${r}%</th>`).join('')+'</tr>'; for(let T of temps){ html+=`<tr><th>${T}°C</th>`; for(let RH of rhs){ let val=AH(T,RH).toFixed(1); html+=`<td>${val}</td>`;} html+='</tr>'; } tbl.innerHTML=html; }
-</script>
-</body></html>
